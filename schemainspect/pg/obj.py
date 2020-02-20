@@ -27,6 +27,7 @@ INDEXES_QUERY = resource_text("sql/indexes.sql")
 SEQUENCES_QUERY = resource_text("sql/sequences.sql")
 CONSTRAINTS_QUERY = resource_text("sql/constraints.sql")
 FUNCTIONS_QUERY = resource_text("sql/functions.sql")
+COMMENTS_QUERY = resource_text("sql/comments.sql")
 TYPES_QUERY = resource_text("sql/types.sql")
 DOMAINS_QUERY = resource_text("sql/domains.sql")
 EXTENSIONS_QUERY = resource_text("sql/extensions.sql")
@@ -862,6 +863,58 @@ class InspectedRowPolicy(Inspected, TableRelated):
         return all(equalities)
 
 
+class InspectedComment(Inspected):
+    def __init__(self, schema, object_type, object_name, object_subname, comment):
+        self.schema = schema
+        self.object_type = object_type
+        self.object_name = object_name
+        self.object_subname = object_subname
+        self.comment = comment
+
+    def get_full_ident_name(self):
+        if self.object_type == 'column':
+            return "{}.{}".format(
+                quoted_identifier(self.object_name, self.schema),
+                quoted_identifier(self.object_subname),
+            )
+        if self.object_type == 'function':
+            return "{}({})".format(
+                quoted_identifier(self.object_name, self.schema),
+                self.object_subname
+            )
+        return quoted_identifier(self.object_name, self.schema)
+
+    @property
+    def drop_statement(self):
+        return "comment on {} {} is null;".format(
+            self.object_type,
+            self.get_full_ident_name()
+        )
+
+    @property
+    def create_statement(self):
+        return "comment on {} {} is '{}';".format(
+            self.object_type,
+            self.get_full_ident_name(),
+            self.comment
+        )
+
+    @property
+    def key(self):
+        return '{}:{}'.format(
+            self.object_type,
+            self.get_full_ident_name()
+        )
+
+    def __eq__(self, other):
+        return (
+            self.get_full_ident_name == other.get_full_ident_name
+            and self.object_type == other.object_type
+            and self.comment == other.comment
+        )
+
+
+
 class PostgreSQL(DBInspector):
     def __init__(self, c, include_internal=False):
         pg_version = c.dialect.server_version_info[0]
@@ -885,6 +938,7 @@ class PostgreSQL(DBInspector):
         self.SEQUENCES_QUERY = processed(SEQUENCES_QUERY)
         self.CONSTRAINTS_QUERY = processed(CONSTRAINTS_QUERY)
         self.FUNCTIONS_QUERY = processed(FUNCTIONS_QUERY)
+        self.COMMENTS_QUERY = processed(COMMENTS_QUERY)
         self.TYPES_QUERY = processed(TYPES_QUERY)
         self.DOMAINS_QUERY = processed(DOMAINS_QUERY)
         self.EXTENSIONS_QUERY = processed(EXTENSIONS_QUERY)
@@ -900,6 +954,7 @@ class PostgreSQL(DBInspector):
         self.load_schemas()
         self.load_all_relations()
         self.load_functions()
+        self.load_comments()
         self.selectables = od()
         self.selectables.update(self.relations)
         self.selectables.update(self.functions)
@@ -1219,6 +1274,20 @@ class PostgreSQL(DBInspector):
             identity_arguments = "({})".format(s.identity_arguments)
             self.functions[s.quoted_full_name + identity_arguments] = s
 
+    def load_comments(self):
+        q = self.c.execute(self.COMMENTS_QUERY)
+        comments = [
+            InspectedComment(
+                schema=c.nspname,
+                object_type=c.objtype,
+                object_name=c.objname,
+                object_subname=c.objsubname,
+                comment=c.description
+            )
+            for c in q
+        ]
+        self.comments = od((i.key, i) for i in comments)
+
     def load_triggers(self):
         q = self.c.execute(self.TRIGGERS_QUERY)
         triggers = [
@@ -1289,6 +1358,7 @@ class PostgreSQL(DBInspector):
             and self.constraints == other.constraints
             and self.extensions == other.extensions
             and self.functions == other.functions
+            and self.comments == other.comments
             and self.triggers == other.triggers
             and self.collations == other.collations
             and self.rlspolicies == other.rlspolicies
