@@ -884,7 +884,7 @@ class InspectedComment(Inspected):
             )
         if self.object_type == 'trigger' or self.object_type == 'constraint':
             return "{} on {}".format(
-                self.object_subname,
+                quoted_identifier(self.object_subname),
                 quoted_identifier(self.object_name, self.schema)
             )
         return quoted_identifier(self.object_name, self.schema)
