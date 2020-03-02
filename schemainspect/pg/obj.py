@@ -908,7 +908,7 @@ class InspectedComment(Inspected):
 
     def __eq__(self, other):
         return (
-            self.get_full_ident_name == other.get_full_ident_name
+            self.get_full_ident_name() == other.get_full_ident_name()
             and self.object_type == other.object_type
             and self.comment == other.comment
         )
