@@ -29,6 +29,22 @@ WITH comms AS (
 			JOIN pg_catalog.pg_namespace nsp ON (nsp.oid = cls.relnamespace)
 			JOIN pg_catalog.pg_description d ON (d.objoid = cls.oid AND d.objsubid = att.attnum AND d.classoid = 'pg_catalog.pg_class'::regclass)
 		WHERE NOT att.attisdropped
+	UNION ALL
+	SELECT 'trigger' AS objtype, n.nspname, rel.relname,
+			tr.tgname AS objsubname, 0 AS objsubid,
+			d.description
+		FROM pg_catalog.pg_trigger tr
+			JOIN pg_catalog.pg_class rel ON rel.oid = tr.tgrelid
+		    JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
+			JOIN pg_catalog.pg_description d ON (d.objoid = tr.oid AND d.objsubid = 0 AND d.classoid = 'pg_catalog.pg_trigger'::regclass)
+	UNION ALL
+	SELECT 'constraint' AS objtype, n.nspname, rel.relname,
+			con.conname AS objsubname, 0 AS objsubid,
+			d.description
+		FROM pg_catalog.pg_constraint con
+			JOIN pg_catalog.pg_class rel ON rel.oid = con.conrelid
+		    JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
+			JOIN pg_catalog.pg_description d ON (d.objoid = con.oid AND d.objsubid = 0 AND d.classoid = 'pg_catalog.pg_constraint'::regclass)
 )
 SELECT * FROM comms
 ORDER BY
