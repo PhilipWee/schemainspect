@@ -26,6 +26,7 @@ SEQUENCES_QUERY = resource_text("sql/sequences.sql")
 CONSTRAINTS_QUERY = resource_text("sql/constraints.sql")
 FUNCTIONS_QUERY = resource_text("sql/functions.sql")
 COMMENTS_QUERY = resource_text("sql/comments.sql")
+OWNERS_QUERY = resource_text("sql/owners.sql")
 TYPES_QUERY = resource_text("sql/types.sql")
 DOMAINS_QUERY = resource_text("sql/domains.sql")
 EXTENSIONS_QUERY = resource_text("sql/extensions.sql")
@@ -235,6 +236,52 @@ class InspectedSelectable(BaseInspectedSelectable):
         return self.alter_table_statement("set {}".format(keyword))
 
 
+class InspectedOwner(Inspected):
+    def __init__(self, schema, object_type, object_name, object_subname, owner):
+        self.schema = schema
+        self.object_type = object_type
+        self.object_name = object_name
+        self.object_subname = object_subname
+        self.owner = owner
+    
+    @property 
+    def name(self):
+        if self.object_subname is None:
+            return f"{self.object_type}_{self.object_name}"
+        return f"{self.object_type}_{self.object_name}_{self.object_subname}"
+
+    def get_full_ident_name(self):
+        if self.object_type == "function":
+            return "{}({})".format(
+                quoted_identifier(self.object_name, self.schema), self.object_subname
+            )
+        return quoted_identifier(self.object_name, self.schema)
+
+    @property
+    def create_statement(self):
+        return "alter {} {} owner to {};".format(
+            self.object_type, self.get_full_ident_name(), self.owner
+        )
+    
+    @property
+    def drop_statement(self):
+        return "alter {} {} owner to session_user;".format(
+            self.object_type, self.get_full_ident_name()
+        )
+
+
+    @property
+    def key(self):
+        return "{}:{}".format(self.object_type, self.get_full_ident_name())
+
+    def __eq__(self, other):
+        if not isinstance(other, InspectedOwner):
+            return False
+        return (
+            self.get_full_ident_name() == other.get_full_ident_name()
+            and self.object_type == other.object_type
+            and self.owner == other.owner
+        )
 class InspectedComment(Inspected):
     def __init__(self, schema, object_type, object_name, object_subname, comment):
         self.schema = schema
@@ -1179,6 +1226,7 @@ class PostgreSQL(DBInspector):
         self.CONSTRAINTS_QUERY = processed(CONSTRAINTS_QUERY)
         self.FUNCTIONS_QUERY = processed(FUNCTIONS_QUERY)
         self.COMMENTS_QUERY = processed(COMMENTS_QUERY)
+        self.OWNERS_QUERY = processed(OWNERS_QUERY)
         self.TYPES_QUERY = processed(TYPES_QUERY)
         self.DOMAINS_QUERY = processed(DOMAINS_QUERY)
         self.EXTENSIONS_QUERY = processed(EXTENSIONS_QUERY)
@@ -1233,6 +1281,22 @@ class PostgreSQL(DBInspector):
                     )
                 )
         self.comments = od((i.key, i) for i in comments)
+    
+    def load_owners(self):
+        q = self.c.execute(self.OWNERS_QUERY)
+        owners: List[InspectedOwner] = []
+        if q:
+            for c in q:
+                owners.append(
+                    InspectedOwner(
+                        schema=c.nspname,
+                        object_type=c.objtype,
+                        object_name=c.objname,
+                        object_subname=c.objsubname,
+                        owner=c.owner,
+                    )
+                )
+        self.owners = od((i.key, i) for i in owners)
 
     def load_schemas(self):
         q = self.execute(self.SCHEMAS_QUERY)
