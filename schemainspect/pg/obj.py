@@ -1257,6 +1257,7 @@ class PostgreSQL(DBInspector):
         self.selectables.update(self.functions)
 
         self.load_privileges()
+        self.load_owners()
         self.load_triggers()
         self.load_collations()
         self.load_rlspolicies()
